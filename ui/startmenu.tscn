@@ -1,0 +1,94 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://scripts/startmenu.gd" id="1_startmenu"]
+
+[sub_resource type="StyleBoxFlat" id="PanelStyle"]
+content_margin_left = 12.0
+content_margin_top = 8.0
+content_margin_right = 12.0
+content_margin_bottom = 8.0
+bg_color = Color(0.06, 0.06, 0.12, 0.94)
+border_width_top = 1
+border_width_bottom = 1
+border_width_left = 1
+border_width_right = 1
+border_color = Color(0.3, 0.55, 1, 0.4)
+corner_radius_top_left = 10
+corner_radius_top_right = 10
+corner_radius_bottom_left = 10
+corner_radius_bottom_right = 10
+
+[sub_resource type="StyleBoxFlat" id="SearchStyle"]
+content_margin_left = 10.0
+content_margin_top = 4.0
+content_margin_right = 10.0
+content_margin_bottom = 4.0
+bg_color = Color(0.12, 0.14, 0.2, 0.9)
+corner_radius_top_left = 6
+corner_radius_top_right = 6
+corner_radius_bottom_left = 6
+corner_radius_bottom_right = 6
+
+[node name="StartMenu" type="PanelContainer"]
+anchors_preset = 5
+anchor_left = 0.0
+anchor_top = 1.0
+anchor_right = 0.0
+anchor_bottom = 1.0
+offset_left = 12.0
+offset_top = -420.0
+offset_right = 320.0
+offset_bottom = -52.0
+grow_horizontal = 2
+grow_vertical = 0
+theme_override_styles/panel = SubResource("PanelStyle")
+script = ExtResource("1_startmenu")
+
+[node name="MarginContainer" type="MarginContainer" parent="."]
+layout_mode = 2
+theme_override_constants/margin_left = 12
+theme_override_constants/margin_top = 8
+theme_override_constants/margin_right = 12
+theme_override_constants/margin_bottom = 8
+
+[node name="VBoxContainer" type="VBoxContainer" parent="MarginContainer"]
+layout_mode = 2
+theme_override_constants/separation = 6
+
+[node name="SearchBar" type="HBoxContainer" parent="MarginContainer/VBoxContainer"]
+layout_mode = 2
+theme_override_constants/separation = 6
+
+[node name="SearchIcon" type="TextureRect" parent="MarginContainer/VBoxContainer/SearchBar"]
+layout_mode = 2
+stretch_mode = 4
+custom_minimum_size = Vector2(24, 24)
+
+[node name="SearchField" type="LineEdit" parent="MarginContainer/VBoxContainer/SearchBar"]
+layout_mode = 2
+placeholder_text = "Search apps..."
+clear_button_enabled = true
+
+[node name="AppListContainer" type="ScrollContainer" parent="MarginContainer/VBoxContainer"]
+layout_mode = 2
+custom_minimum_size = Vector2(280, 300)
+size_flags_vertical = 3
+
+[node name="AppList" type="ItemList" parent="MarginContainer/VBoxContainer/AppListContainer"]
+layout_mode = 2
+allow_reselect = true
+max_columns = 1
+fixed_column_width = 260
+icon_mode = 0
+fixed_icon_size = Vector2(24, 24)
+
+[node name="RunningSection" type="VBoxContainer" parent="MarginContainer/VBoxContainer"]
+layout_mode = 2
+custom_minimum_size = Vector2(280, 60)
+size_flags_vertical = 3
+theme_override_constants/separation = 4
+
+[node name="RunningLabel" type="Label" parent="MarginContainer/VBoxContainer/RunningSection"]
+text = "Running Apps"
+theme_override_font_sizes/font_size = 11
+modulate = Color(0.6, 0.6, 0.6, 1)

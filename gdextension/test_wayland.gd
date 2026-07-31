@@ -2,6 +2,7 @@ extends Control
 
 @onready var wayland: WaylandNode = $Wayland
 @onready var taskbar: PanelContainer = $Taskbar
+@onready var start_menu: Control = $StartMenu
 
 enum DisplayMode {
 	CONTROL_FULLSCREEN, ## render into the app's main window (full-rect Control)
@@ -40,6 +41,7 @@ func _ready() -> void:
 	wayland.socket_ready.connect(_on_socket_ready)
 	wayland.log_message.connect(_on_log_message)
 	taskbar.app_launched.connect(_on_app_launched)
+	start_menu.app_launched.connect(_on_app_launched)
 	wayland.start(1280, 720)
 	wayland.launch_client(client)
 
