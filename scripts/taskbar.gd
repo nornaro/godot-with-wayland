@@ -24,7 +24,7 @@ func _build_ui() -> void:
 	start_button.tooltip_text = "Start Menu"
 	start_button.custom_minimum_size = Vector2(40, 36)
 	start_button.focus_mode = Control.FOCUS_NONE
-	start_button.theme_override_styles["panel"] = _create_start_button_style()
+	start_button.add_theme_stylebox_override("panel", _create_start_button_style())
 	start_button.pressed.connect(_on_start_button_pressed)
 	$MarginContainer/HBoxContainer.add_child(start_button)
 
@@ -38,8 +38,8 @@ func _build_ui() -> void:
 		button.text = app.get("label", "App")
 		button.tooltip_text = app.get("command", "")
 		button.focus_mode = Control.FOCUS_NONE
-		button.pressed.connect(func(cmd: String) -> void:
-			app_launched.emit(cmd), [app.get("command", "")])
+		var cmd: String = app.get("command", "")
+		button.pressed.connect(func() -> void: app_launched.emit(cmd))
 		$MarginContainer/HBoxContainer.add_child(button)
 
 	# Add stretch spacer

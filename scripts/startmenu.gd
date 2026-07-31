@@ -19,7 +19,7 @@ var is_open: bool = false
 var selected_index: int = 0
 
 @onready var search_line: LineEdit = $MarginContainer/VBoxContainer/SearchBar/SearchField
-@onready var app_list: ItemList = $MarginContainer/VBoxContainer/AppList
+@onready var app_list: ItemList = $MarginContainer/VBoxContainer/AppListContainer/AppList
 @onready var running_section: VBoxContainer = $MarginContainer/VBoxContainer/RunningSection
 @onready var scroll_container: ScrollContainer = $MarginContainer/VBoxContainer/AppListContainer
 
@@ -31,7 +31,7 @@ func _ready() -> void:
 func load_apps() -> void:
 	apps.clear()
 	for dir_path in app_dirs:
-		var expanded_dir = dir_path.replace("~", DirAccess.get_full_path("~"))
+		var expanded_dir = dir_path.replace("~", OS.get_environment("HOME"))
 		var dir = DirAccess.open(expanded_dir)
 		if dir == null:
 			continue
@@ -50,9 +50,9 @@ func load_apps() -> void:
 func parse_desktop_file(path: String) -> Dictionary:
 	var file = FileAccess.open(path, FileAccess.READ)
 	if file == null:
-		return null
+		return {}
 	var info: Dictionary = {"path": path, "Name": "", "Exec": "", "Icon": "", "Categories": "", "Terminal": false}
-	var in_entry = false
+	var in_entry := false
 	while true:
 		var line = file.get_line()
 		if line.begins_with("[Desktop Entry]"):
@@ -78,7 +78,7 @@ func parse_desktop_file(path: String) -> Dictionary:
 			break
 	file.close()
 	if info["Name"] == "":
-		return null
+		return {}
 	return info
 
 func connect_signals() -> void:
@@ -95,13 +95,13 @@ func _on_search_input(event: InputEvent) -> void:
 		var key = event as InputEventKey
 		if key.pressed:
 			match key.keycode:
-				KEY_Escape:
+				Key.KEY_ESCAPE:
 					toggle_menu()
-				KEY_Down:
+				Key.KEY_DOWN:
 					move_selection(1)
-				KEY_Up:
+				Key.KEY_UP:
 					move_selection(-1)
-				KEY_Return:
+				Key.KEY_ENTER:
 					launch_selected()
 
 func _on_app_selected(index: int) -> void:
@@ -124,10 +124,11 @@ func launch_selected() -> void:
 
 func filter_apps() -> void:
 	app_list.clear()
-	filtered_apps = apps.filter(func(app):
-		return app["Name"].to_lower().find(search_text) >= 0
-		or app.get("Categories", "").to_lower().find(search_text) >= 0
-	)
+	filtered_apps.clear()
+	for app in apps:
+		if app["Name"].to_lower().find(search_text) >= 0 \
+				or app.get("Categories", "").to_lower().find(search_text) >= 0:
+			filtered_apps.append(app)
 	for app in filtered_apps:
 		var item_idx = app_list.add_item(app["Name"])
 		app_list.set_item_metadata(item_idx, app)
