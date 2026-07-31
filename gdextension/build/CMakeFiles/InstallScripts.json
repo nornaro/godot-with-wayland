@@ -1,0 +1,8 @@
+{
+	"InstallScripts" : 
+	[
+		"/run/media/sugo/Data/GameDev/Godot/_GDWL/gdwl/godot-with-way-land/gdextension/build/cmake_install.cmake",
+		"/run/media/sugo/Data/GameDev/Godot/_GDWL/gdwl/godot-with-way-land/gdextension/build/thirdparty/godot-cpp/cmake_install.cmake"
+	],
+	"Parallel" : false
+}

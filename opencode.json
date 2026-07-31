@@ -1,0 +1,14 @@
+{
+	"$schema": "https://opencode.ai/config.json",
+	"mcp": {
+		"godot-mcp": {
+			"command": [
+				"./addons/godot_mcp/bin/gdagent-mcp",
+				"--port",
+				"8790"
+			],
+			"enabled": true,
+			"type": "local"
+		}
+	}
+}

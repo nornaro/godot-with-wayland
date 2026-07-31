@@ -1,0 +1,9 @@
+[configuration]
+
+entry_symbol = "godot_wayland_library_init"
+compatibility_minimum = "4.7"
+
+[libraries]
+
+linux.debug.x86_64 = "res://gdextension/bin/libgodot_wayland.so"
+linux.release.x86_64 = "res://gdextension/bin/libgodot_wayland.so"
