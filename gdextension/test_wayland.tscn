@@ -1,4 +1,4 @@
-[gd_scene load_steps=6 format=3 uid="uid://c3ych5nv374op"]
+[gd_scene format=3 uid="uid://c3ych5nv374op"]
 
 [ext_resource type="Script" uid="uid://765g5pgd0ps1" path="res://gdextension/test_wayland.gd" id="1"]
 [ext_resource type="PackedScene" path="res://ui/taskbar.tscn" id="2_taskbar"]
@@ -21,10 +21,10 @@ content_margin_top = 5.0
 content_margin_right = 14.0
 content_margin_bottom = 5.0
 bg_color = Color(0.22, 0.27, 0.35, 0.95)
-border_width_top = 1
-border_width_bottom = 1
 border_width_left = 1
+border_width_top = 1
 border_width_right = 1
+border_width_bottom = 1
 border_color = Color(0.3, 0.55, 1, 0.7)
 corner_radius_top_left = 6
 corner_radius_top_right = 6
@@ -43,14 +43,14 @@ corner_radius_bottom_right = 6
 corner_radius_bottom_left = 6
 
 [sub_resource type="Theme" id="ThemeWayland"]
-Button/styles/normal = SubResource("BtnNormal")
-Button/styles/hover = SubResource("BtnHover")
-Button/styles/pressed = SubResource("BtnPressed")
-Button/styles/focus = SubResource("BtnNormal")
 Button/colors/font_color = Color(0.9, 0.93, 1, 1)
+Button/colors/font_focus_color = Color(0.9, 0.93, 1, 1)
 Button/colors/font_hover_color = Color(1, 1, 1, 1)
 Button/colors/font_pressed_color = Color(1, 1, 1, 1)
-Button/colors/font_focus_color = Color(0.9, 0.93, 1, 1)
+Button/styles/focus = SubResource("BtnNormal")
+Button/styles/hover = SubResource("BtnHover")
+Button/styles/normal = SubResource("BtnNormal")
+Button/styles/pressed = SubResource("BtnPressed")
 
 [node name="TestWayland" type="Control" unique_id=1798207850]
 layout_mode = 3
@@ -71,27 +71,11 @@ offset_bottom = -52.0
 grow_horizontal = 2
 grow_vertical = 2
 
-[node name="Taskbar" parent="." instance=ExtResource("2_taskbar")]
+[node name="Taskbar" parent="." unique_id=818393278 instance=ExtResource("2_taskbar")]
 layout_mode = 1
-anchors_preset = 12
-anchor_top = 1.0
-anchor_right = 1.0
-anchor_bottom = 1.0
 offset_top = -52.0
-grow_horizontal = 2
-grow_vertical = 0
 
-[node name="StartMenu" parent="." instance=ExtResource("3_startmenu")]
-layout_mode = 1
-anchors_preset = 5
-anchor_left = 0.0
-anchor_top = 1.0
-anchor_right = 0.0
-anchor_bottom = 1.0
-offset_left = 12.0
-offset_top = -420.0
-offset_right = 320.0
-offset_bottom = -52.0
-grow_horizontal = 2
-grow_vertical = 0
+[node name="StartMenu" parent="." unique_id=1008378430 instance=ExtResource("3_startmenu")]
 visible = false
+layout_mode = 1
+anchors_preset = 2

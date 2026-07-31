@@ -39,7 +39,7 @@ func load_apps() -> void:
 		while filename != "":
 			if filename.ends_with(".desktop"):
 				var app_info = parse_desktop_file(expanded_dir + "/" + filename)
-				if app_info != null and app_info.get("NoDisplay", false) == false:
+				if app_info.get("Name", "") != "" and app_info.get("NoDisplay", false) == false:
 					apps.append(app_info)
 			filename = dir.get_next()
 		dir.list_dir_end()
@@ -94,13 +94,14 @@ func _on_search_input(event: InputEvent) -> void:
 		var key = event as InputEventKey
 		if key.pressed:
 			match key.keycode:
-				Key.KEY_ESCAPE:
+				KEY_ESCAPE:
 					toggle_menu()
-				Key.KEY_DOWN:
+				KEY_DOWN:
 					move_selection(1)
-				Key.KEY_UP:
+				KEY_UP:
 					move_selection(-1)
-				Key.KEY_ENTER:
+				KEY_ENTER:
+					launch_selected()
 					launch_selected()
 
 func _on_app_selected(index: int) -> void:
@@ -123,11 +124,10 @@ func launch_selected() -> void:
 
 func filter_apps() -> void:
 	app_list.clear()
-	filtered_apps.clear()
-	for app in apps:
-		if app["Name"].to_lower().find(search_text) >= 0 \
-				or app.get("Categories", "").to_lower().find(search_text) >= 0:
-			filtered_apps.append(app)
+	filtered_apps = apps.filter(func(app):
+		return app["Name"].to_lower().find(search_text) >= 0 \
+			or app.get("Categories", "").to_lower().find(search_text) >= 0
+	)
 	for app in filtered_apps:
 		var item_idx = app_list.add_item(app["Name"])
 		app_list.set_item_metadata(item_idx, app)
