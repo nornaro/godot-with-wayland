@@ -31,7 +31,7 @@ func _ready() -> void:
 func load_apps() -> void:
 	apps.clear()
 	for dir_path in app_dirs:
-		var expanded_dir = dir_path.replace("~", OS.get_user_data_dir())
+		var expanded_dir = dir_path.replace("~", DirAccess.get_full_path("~"))
 		var dir = DirAccess.open(expanded_dir)
 		if dir == null:
 			continue
@@ -52,10 +52,14 @@ func parse_desktop_file(path: String) -> Dictionary:
 	if file == null:
 		return null
 	var info: Dictionary = {"path": path, "Name": "", "Exec": "", "Icon": "", "Categories": "", "Terminal": false}
+	var in_entry = false
 	while true:
 		var line = file.get_line()
 		if line.begins_with("[Desktop Entry]"):
-			break
+			in_entry = true
+			continue
+		if not in_entry:
+			continue
 		if line.begins_with("Name="):
 			info["Name"] = line.substr(5).strip_edges()
 		elif line.begins_with("Exec="):
@@ -70,6 +74,8 @@ func parse_desktop_file(path: String) -> Dictionary:
 			info["NoDisplay"] = line.substr(10).strip_edges().to_lower() == "true"
 		elif line.begins_with("Hidden="):
 			info["NoDisplay"] = line.substr(7).strip_edges().to_lower() == "true"
+		elif line.begins_with("["):
+			break
 	file.close()
 	if info["Name"] == "":
 		return null
@@ -143,7 +149,8 @@ func _on_app_launched(command: String) -> void:
 	app_launched.emit(command)
 
 func update_running_apps() -> void:
-	running_section.clear()
+	for child in running_section.get_children():
+		child.queue_free()
 	for app_name in running_apps:
 		var label = Label.new()
 		label.text = "● " + app_name

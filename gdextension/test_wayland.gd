@@ -21,7 +21,6 @@ enum DisplayMode {
 @export var fullscreen_apps := false
 @export var client: String = "mangohud 0ad -windowed"
 
-var _frame := 0
 var _pid: int
 
 func _ready() -> void:

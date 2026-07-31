@@ -24,7 +24,7 @@ func _build_ui() -> void:
 	start_button.tooltip_text = "Start Menu"
 	start_button.custom_minimum_size = Vector2(40, 36)
 	start_button.focus_mode = Control.FOCUS_NONE
-	start_button.theme_override_styles/panel = _create_start_button_style()
+	start_button.theme_override_styles["panel"] = _create_start_button_style()
 	start_button.pressed.connect(_on_start_button_pressed)
 	$MarginContainer/HBoxContainer.add_child(start_button)
 
