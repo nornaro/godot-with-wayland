@@ -15,6 +15,7 @@ var start_menu: Control = null
 var start_button: Button = null
 
 func _ready() -> void:
+	start_menu = %StartMenu
 	_build_ui()
 
 func _build_ui() -> void:
@@ -62,17 +63,15 @@ func _create_start_button_style() -> StyleBoxFlat:
 	return style
 
 func _on_start_button_pressed() -> void:
-	if start_menu == null:
-		var start_menu_scene = load("res://ui/startmenu.tscn")
-		start_menu = start_menu_scene.instantiate()
-		start_menu.app_launched.connect(_on_app_launched)
-		get_tree().current_scene.add_child(start_menu)
-		# Position below start button
-		var btn_rect = start_button.get_global_rect()
-		start_menu.position = Vector2(btn_rect.position.x, btn_rect.end.y)
-		start_menu.visible = true
-	else:
-		start_menu.visible = not start_menu.visible
+	#var start_menu_scene = load("res://ui/startmenu.tscn")
+	#start_menu = start_menu_scene.instantiate()
+	#start_menu.app_launched.connect(_on_app_launched)
+	#get_tree().current_scene.add_child(start_menu)
+	# Position below start button
+	#var btn_rect = start_button.get_global_rect()
+	#start_menu.position = Vector2(btn_rect.position.x, btn_rect.end.y)
+	#start_menu.visible = true
+	start_menu.visible = not start_menu.visible
 	start_menu_toggled.emit(start_menu.visible)
 
 func _on_app_launched(command: String) -> void:

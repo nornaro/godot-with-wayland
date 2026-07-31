@@ -2,7 +2,7 @@
 
 [ext_resource type="Script" uid="uid://765g5pgd0ps1" path="res://gdextension/test_wayland.gd" id="1"]
 [ext_resource type="PackedScene" path="res://ui/taskbar.tscn" id="2_taskbar"]
-[ext_resource type="PackedScene" path="res://ui/startmenu.tscn" id="3_startmenu"]
+[ext_resource type="PackedScene" uid="uid://cljewhw5n3jcf" path="res://ui/startmenu.tscn" id="3_startmenu"]
 
 [sub_resource type="StyleBoxFlat" id="BtnNormal"]
 content_margin_left = 14.0
@@ -76,6 +76,6 @@ layout_mode = 1
 offset_top = -52.0
 
 [node name="StartMenu" parent="." unique_id=1008378430 instance=ExtResource("3_startmenu")]
+unique_name_in_owner = true
 visible = false
 layout_mode = 1
-anchors_preset = 2

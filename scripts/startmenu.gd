@@ -39,6 +39,7 @@ func connect_signals() -> void:
 	search_line.text_changed.connect(_on_search_changed)
 	search_line.gui_input.connect(_on_search_input)
 	app_list.item_selected.connect(_on_app_selected)
+	visibility_changed.connect(search_line.grab_focus)
 
 func _on_search_changed(new_text: String) -> void:
 	search_text = new_text.to_lower()
