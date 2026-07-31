@@ -102,7 +102,6 @@ func _on_search_input(event: InputEvent) -> void:
 					move_selection(-1)
 				KEY_ENTER:
 					launch_selected()
-					launch_selected()
 
 func _on_app_selected(index: int) -> void:
 	selected_index = index
