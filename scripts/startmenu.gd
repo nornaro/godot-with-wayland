@@ -52,7 +52,7 @@ func parse_desktop_file(path: String) -> Dictionary:
 		return {}
 	var info: Dictionary = {"path": path, "Name": "", "Exec": "", "Icon": "", "Categories": "", "Terminal": false}
 	var in_entry := false
-	while true:
+	while not file.eof_reached():
 		var line = file.get_line()
 		if line.begins_with("[Desktop Entry]"):
 			in_entry = true
