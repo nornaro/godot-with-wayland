@@ -1,7 +1,0 @@
-/run/media/sugo/Data/GameDev/Godot/_GDWL/gdwl/godot-with-way-land/gdextension/build/CMakeFiles/godot_wayland.dir
-/run/media/sugo/Data/GameDev/Godot/_GDWL/gdwl/godot-with-way-land/gdextension/build/CMakeFiles/edit_cache.dir
-/run/media/sugo/Data/GameDev/Godot/_GDWL/gdwl/godot-with-way-land/gdextension/build/CMakeFiles/rebuild_cache.dir
-/run/media/sugo/Data/GameDev/Godot/_GDWL/gdwl/godot-with-way-land/gdextension/build/thirdparty/godot-cpp/CMakeFiles/generate_bindings.dir
-/run/media/sugo/Data/GameDev/Godot/_GDWL/gdwl/godot-with-way-land/gdextension/build/thirdparty/godot-cpp/CMakeFiles/godot-cpp.dir
-/run/media/sugo/Data/GameDev/Godot/_GDWL/gdwl/godot-with-way-land/gdextension/build/thirdparty/godot-cpp/CMakeFiles/edit_cache.dir
-/run/media/sugo/Data/GameDev/Godot/_GDWL/gdwl/godot-with-way-land/gdextension/build/thirdparty/godot-cpp/CMakeFiles/rebuild_cache.dir
