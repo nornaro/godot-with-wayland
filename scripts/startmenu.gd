@@ -2,7 +2,6 @@ extends PanelContainer
 ## LXDE-style start menu with search and running app indicators.
 
 signal app_launched(command: String)
-signal app_selected(app_name: String)
 
 @export var app_dirs: Array[String] = [
 	"/usr/share/applications",

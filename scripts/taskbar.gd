@@ -78,11 +78,11 @@ func _on_start_button_pressed() -> void:
 func _on_app_launched(command: String) -> void:
 	app_launched.emit(command)
 
-func register_running_app(name: String) -> void:
+func register_running_app(_name: String) -> void:
 	# Called by the compositor when a new client is launched
 	# This would be connected to the compositor's client tracking
 	pass
 
-func unregister_running_app(name: String) -> void:
+func unregister_running_app(_name: String) -> void:
 	# Called when a client exits
 	pass
