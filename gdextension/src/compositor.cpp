@@ -793,15 +793,15 @@ void Compositor::render_frame() {
 	if (!scene_output || !swapchain) {
 		return;
 	}
-	if (wlr_scene_output_needs_frame(scene_output)) {
-		spurious_renders = 0;
-	} else {
+	if (!wlr_scene_output_needs_frame(scene_output)) {
 		spurious_renders++;
 		if ((spurious_renders % 300) == 300 - 1) {
 			fprintf(stderr, "[perf] spurious renders: %u consecutive without damage\n",
 				spurious_renders);
 		}
+		return;
 	}
+	spurious_renders = 0;
 
 	struct timespec t0, t1;
 	clock_gettime(CLOCK_MONOTONIC, &t0);
