@@ -72,18 +72,19 @@ func _on_search_changed(new_text: String) -> void:
 	filter_apps()
 
 func _on_search_input(event: InputEvent) -> void:
-	if event is InputEventKey:
-		var key = event as InputEventKey
-		if key.pressed:
-			match key.keycode:
-				KEY_ESCAPE:
-					toggle_menu()
-				KEY_DOWN:
-					move_selection(1)
-				KEY_UP:
-					move_selection(-1)
-				KEY_ENTER:
-					launch_selected()
+	if event is not InputEventKey:
+		return
+	if !event.pressed:
+		return
+	match event.keycode:
+		KEY_ESCAPE:
+			toggle_menu()
+		KEY_DOWN:
+			move_selection(1)
+		KEY_UP:
+			move_selection(-1)
+		KEY_ENTER:
+			launch_selected()
 
 func _on_app_selected(index: int) -> void:
 	selected_index = index
