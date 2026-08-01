@@ -82,6 +82,7 @@ static void handle_new_xdg_toplevel(struct wl_listener *listener, void *data);
 static void handle_new_xdg_popup(struct wl_listener *listener, void *data);
 static void handle_request_set_cursor(struct wl_listener *listener, void *data);
 static void handle_request_set_selection(struct wl_listener *listener, void *data);
+static void handle_host_clipboard_destroy(struct wl_listener *listener, void *data);
 static void handle_keyboard_modifiers(struct wl_listener *listener, void *data);
 static void handle_keyboard_key(struct wl_listener *listener, void *data);
 
@@ -95,6 +96,225 @@ static const struct wlr_pointer_impl pointer_impl = {
 };
 
 // ---------------------------------------------------------------------------
+// Clipboard bridge
+// ---------------------------------------------------------------------------
+//
+// Two directions:
+//   * client -> host: when a client sets a selection, we accept it and read
+//     the text out of its data source through a pipe, then hand it to the
+//     Godot client.
+//   * host -> client: we keep a wlr_data_source of our own as the seat
+//     selection. When a client asks to receive, our `send` impl writes the
+//     current host clipboard text to the client's pipe. The seat selection is
+//     (re)created lazily via clipboard_sync() whenever the host text changes.
+
+struct HostClipboardSource {
+	struct wlr_data_source source;
+	Compositor *compositor;
+};
+
+struct ClipboardRead {
+	Compositor *compositor;
+	int fd = -1;
+	std::string buffer;
+};
+
+static void host_clipboard_send(struct wlr_data_source *source, const char *mime_type,
+		int32_t fd) {
+	struct HostClipboardSource *host = wl_container_of(source, host, source);
+	std::string text;
+	if (host->compositor->client) {
+		text = host->compositor->client->get_clipboard_text();
+	}
+	size_t off = 0;
+	while (off < text.size()) {
+		ssize_t n = write(fd, text.data() + off, text.size() - off);
+		if (n < 0) {
+			if (errno == EINTR) {
+				continue;
+			}
+			break;
+		}
+		off += (size_t)n;
+	}
+	close(fd);
+	(void)mime_type;
+}
+
+static void host_clipboard_accept(struct wlr_data_source *source, uint32_t serial,
+		const char *mime_type) {
+	(void)source;
+	(void)serial;
+	(void)mime_type;
+}
+
+static void host_clipboard_destroy(struct wlr_data_source *source) {
+	struct HostClipboardSource *host = wl_container_of(source, host, source);
+	free(host);
+}
+
+static const struct wlr_data_source_impl host_clipboard_impl = {
+	.send = host_clipboard_send,
+	.accept = host_clipboard_accept,
+	.destroy = host_clipboard_destroy,
+};
+
+static void handle_host_clipboard_destroy(struct wl_listener *listener, void *data) {
+	Compositor *c = wl_container_of(listener, c, host_clipboard_destroy);
+	c->host_clipboard = nullptr;
+	wl_list_remove(&c->host_clipboard_destroy.link);
+	(void)data;
+}
+
+static const char *pick_text_mime(struct wlr_data_source *source) {
+	const char *plain = nullptr;
+	const char *any_text = nullptr;
+	char *data = (char *)source->mime_types.data;
+	char *end = data + source->mime_types.size;
+	for (char *p = data; p < end; p += sizeof(char *)) {
+		const char *mime = *(const char **)p;
+		if (mime == nullptr) {
+			continue;
+		}
+		if (strcmp(mime, "text/plain;charset=utf-8") == 0) {
+			return mime;
+		}
+		if (strcmp(mime, "text/plain") == 0) {
+			if (plain == nullptr) {
+				plain = mime;
+			}
+			continue;
+		}
+		if (strncmp(mime, "text/", 5) == 0 && any_text == nullptr) {
+			any_text = mime;
+		}
+	}
+	if (plain != nullptr) {
+		return plain;
+	}
+	return any_text;
+}
+
+void Compositor::on_client_selection(struct wlr_data_source *source, uint32_t serial) {
+	(void)serial;
+	if (source == nullptr) {
+		return;
+	}
+	const char *mime = pick_text_mime(source);
+	if (mime == nullptr) {
+		return;
+	}
+	int fds[2];
+	if (pipe(fds) != 0) {
+		return;
+	}
+	int flags = fcntl(fds[0], F_GETFL, 0);
+	fcntl(fds[0], F_SETFL, flags | O_NONBLOCK);
+	fcntl(fds[0], F_SETFD, FD_CLOEXEC);
+	ClipboardRead *read = new ClipboardRead();
+	read->compositor = this;
+	read->fd = fds[0];
+	// wlroots closes fds[1] for client sources after relaying the receive.
+	wlr_data_source_send(source, mime, fds[1]);
+	active_reads.push_back(read);
+}
+
+void Compositor::clipboard_sync() {
+	if (!running() || seat == nullptr) {
+		return;
+	}
+	if (host_clipboard != nullptr) {
+		return;
+	}
+	HostClipboardSource *host = (HostClipboardSource *)calloc(1, sizeof(*host));
+	if (host == nullptr) {
+		return;
+	}
+	wlr_data_source_init(&host->source, &host_clipboard_impl);
+	host->compositor = this;
+	char **p = (char **)wl_array_add(&host->source.mime_types, sizeof(char *));
+	if (p != nullptr) {
+		*p = strdup("text/plain;charset=utf-8");
+	}
+	p = (char **)wl_array_add(&host->source.mime_types, sizeof(char *));
+	if (p != nullptr) {
+		*p = strdup("text/plain");
+	}
+	host_clipboard_destroy.notify = handle_host_clipboard_destroy;
+	wl_signal_add(&host->source.events.destroy, &host_clipboard_destroy);
+	wlr_seat_set_selection(seat, &host->source, seat->selection_serial);
+	host_clipboard = host;
+}
+
+void Compositor::pump_clipboard_reads() {
+	if (active_reads.empty()) {
+		return;
+	}
+	std::vector<struct pollfd> fds;
+	fds.reserve(active_reads.size());
+	for (ClipboardRead *r : active_reads) {
+		fds.push_back({r->fd, POLLIN, 0});
+	}
+	int ret = poll(fds.data(), fds.size(), 0);
+	if (ret <= 0) {
+		return;
+	}
+	for (size_t i = 0; i < active_reads.size();) {
+		ClipboardRead *r = active_reads[i];
+		if (!(fds[i].revents & (POLLIN | POLLHUP | POLLERR))) {
+			i++;
+			continue;
+		}
+		bool done = false;
+		for (;;) {
+			char buf[4096];
+			ssize_t n = read(r->fd, buf, sizeof(buf));
+			if (n > 0) {
+				r->buffer.append(buf, (size_t)n);
+				continue;
+			}
+			if (n < 0 && errno == EINTR) {
+				continue;
+			}
+			if (n < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) {
+				break;
+			}
+			done = true;
+			break;
+		}
+		if (done) {
+			if (!r->buffer.empty() && client) {
+				client->on_clipboard_text(r->buffer);
+			}
+			close(r->fd);
+			delete r;
+			active_reads.erase(active_reads.begin() + (long)i);
+			fds.erase(fds.begin() + (long)i);
+			// Make the compositor's own source the seat selection again so
+			// pasting into another client serves the same text.
+			clipboard_sync();
+		} else {
+			i++;
+		}
+	}
+}
+
+void Compositor::cleanup_clipboard() {
+	for (ClipboardRead *r : active_reads) {
+		if (r->fd >= 0) {
+			close(r->fd);
+		}
+		delete r;
+	}
+	active_reads.clear();
+	if (host_clipboard != nullptr) {
+		wl_list_remove(&host_clipboard_destroy.link);
+		wlr_data_source_destroy(&host_clipboard->source);
+		host_clipboard = nullptr;
+	}
+}
+
+// ---------------------------------------------------------------------------
 // Toplevel / popup handling (ported from tinywl)
 // ---------------------------------------------------------------------------
 
@@ -105,6 +325,14 @@ static void focus_toplevel(Compositor *c, Toplevel *toplevel) {
 	struct wlr_seat *seat = c->seat;
 	struct wlr_surface *prev_surface = seat->keyboard_state.focused_surface;
 	struct wlr_surface *surface = toplevel->xdg_toplevel->base->surface;
+	{
+		FILE *f = fopen("/tmp/opencode/input.log", "a");
+		if (f) {
+			fprintf(f, "focus -> surface=%p app_id=%s\n", (void *)surface,
+				toplevel->xdg_toplevel->app_id ? toplevel->xdg_toplevel->app_id : "(null)");
+			fclose(f);
+		}
+	}
 	if (prev_surface == surface) {
 		return;
 	}
@@ -455,6 +683,7 @@ static void handle_request_set_selection(struct wl_listener *listener, void *dat
 	const struct wlr_seat_request_set_selection_event *event =
 		(const struct wlr_seat_request_set_selection_event *)data;
 	wlr_seat_set_selection(c->seat, event->source, event->serial);
+	c->on_client_selection(event->source, event->serial);
 }
 
 static void handle_keyboard_modifiers(struct wl_listener *listener, void *data) {
@@ -464,10 +693,10 @@ static void handle_keyboard_modifiers(struct wl_listener *listener, void *data) 
 }
 
 static void handle_keyboard_key(struct wl_listener *listener, void *data) {
-	// Not used for the fabricated keyboard: keys are forwarded directly in
-	// Compositor::key_event(). Kept for parity/safety.
-	(void)listener;
-	(void)data;
+	Compositor *c = wl_container_of(listener, c, keyboard_key);
+	struct wlr_keyboard_key_event *event = (struct wlr_keyboard_key_event *)data;
+	wlr_seat_set_keyboard(c->seat, c->keyboard);
+	wlr_seat_keyboard_notify_key(c->seat, event->time_msec, event->keycode, event->state);
 }
 
 // ---------------------------------------------------------------------------
@@ -673,6 +902,7 @@ void Compositor::pump() {
 	wl_display_flush_clients(display);
 	wl_event_loop_dispatch(wl_display_get_event_loop(display), 0);
 	wl_display_flush_clients(display);
+	pump_clipboard_reads();
 	uint32_t now = now_msec();
 	bool due = now - last_render_msec >= 16;
 	gate_decisions++;
@@ -701,6 +931,7 @@ void Compositor::shutdown() {
 		return;
 	}
 	wl_display_destroy_clients(display);
+	cleanup_clipboard();
 
 	wl_list_remove(&new_xdg_toplevel.link);
 	wl_list_remove(&new_xdg_popup.link);
@@ -905,18 +1136,10 @@ void Compositor::copy_to_rgba(const uint8_t *data, uint32_t format,
 		size_t stride, int width, int height) {
 	rgba_scratch.resize((size_t)width * height * 4);
 
+	// DRM formats are stored in little-endian memory as B,G,R[,A]. The XRGB /
+	// XBGR byte order corresponds to the physical R,G,B pixel order (the first
+	// byte in memory is the least significant / blue channel).
 	if (format == DRM_FORMAT_XRGB8888) {
-		for (int y = 0; y < height; y++) {
-			const uint8_t *src = data + (size_t)y * stride;
-			uint8_t *dst = rgba_scratch.data() + (size_t)y * width * 4;
-			for (int x = 0; x < width; x++) {
-				dst[x * 4 + 0] = src[x * 4 + 0];
-				dst[x * 4 + 1] = src[x * 4 + 1];
-				dst[x * 4 + 2] = src[x * 4 + 2];
-				dst[x * 4 + 3] = 0xFF;
-			}
-		}
-	} else if (format == DRM_FORMAT_XBGR8888) {
 		for (int y = 0; y < height; y++) {
 			const uint8_t *src = data + (size_t)y * stride;
 			uint8_t *dst = rgba_scratch.data() + (size_t)y * width * 4;
@@ -927,15 +1150,26 @@ void Compositor::copy_to_rgba(const uint8_t *data, uint32_t format,
 				dst[x * 4 + 3] = 0xFF;
 			}
 		}
+	} else if (format == DRM_FORMAT_XBGR8888) {
+		for (int y = 0; y < height; y++) {
+			const uint8_t *src = data + (size_t)y * stride;
+			uint8_t *dst = rgba_scratch.data() + (size_t)y * width * 4;
+			for (int x = 0; x < width; x++) {
+				dst[x * 4 + 0] = src[x * 4 + 0];
+				dst[x * 4 + 1] = src[x * 4 + 1];
+				dst[x * 4 + 2] = src[x * 4 + 2];
+				dst[x * 4 + 3] = 0xFF;
+			}
+		}
 	} else if (format == DRM_FORMAT_ARGB8888) {
 		for (int y = 0; y < height; y++) {
 			const uint8_t *src = data + (size_t)y * stride;
 			uint8_t *dst = rgba_scratch.data() + (size_t)y * width * 4;
 			for (int x = 0; x < width; x++) {
-				dst[x * 4 + 0] = src[x * 4 + 1];
-				dst[x * 4 + 1] = src[x * 4 + 2];
-				dst[x * 4 + 2] = src[x * 4 + 3];
-				dst[x * 4 + 3] = src[x * 4 + 0];
+				dst[x * 4 + 0] = src[x * 4 + 2];
+				dst[x * 4 + 1] = src[x * 4 + 1];
+				dst[x * 4 + 2] = src[x * 4 + 0];
+				dst[x * 4 + 3] = src[x * 4 + 3];
 			}
 		}
 	} else if (format == DRM_FORMAT_ABGR8888) {
@@ -943,10 +1177,10 @@ void Compositor::copy_to_rgba(const uint8_t *data, uint32_t format,
 			const uint8_t *src = data + (size_t)y * stride;
 			uint8_t *dst = rgba_scratch.data() + (size_t)y * width * 4;
 			for (int x = 0; x < width; x++) {
-				dst[x * 4 + 0] = src[x * 4 + 3];
-				dst[x * 4 + 1] = src[x * 4 + 2];
-				dst[x * 4 + 2] = src[x * 4 + 1];
-				dst[x * 4 + 3] = src[x * 4 + 0];
+				dst[x * 4 + 0] = src[x * 4 + 0];
+				dst[x * 4 + 1] = src[x * 4 + 1];
+				dst[x * 4 + 2] = src[x * 4 + 2];
+				dst[x * 4 + 3] = src[x * 4 + 3];
 			}
 		}
 	} else {
@@ -1043,6 +1277,14 @@ void Compositor::key_event(int godot_key, bool pressed) {
 		return;
 	}
 	uint32_t keycode = keysym_to_keycode(keysym);
+	{
+		FILE *f = fopen("/tmp/opencode/input.log", "a");
+		if (f) {
+			fprintf(f, "key_event godot=%d keysym=%u keycode=%u focus=%p\n", godot_key,
+				keysym, keycode, (void *)seat->keyboard_state.focused_surface);
+			fclose(f);
+		}
+	}
 	if (keycode == 0) {
 		return;
 	}

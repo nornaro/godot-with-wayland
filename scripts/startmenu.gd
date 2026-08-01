@@ -20,6 +20,7 @@ var selected_index: int = 0
 
 func _ready() -> void:
 	visible = false
+	app_list.focus_mode = Control.FOCUS_NONE
 	load_apps()
 	connect_signals()
 
@@ -65,7 +66,7 @@ func connect_signals() -> void:
 	search_line.text_changed.connect(_on_search_changed)
 	search_line.gui_input.connect(_on_search_input)
 	app_list.item_selected.connect(_on_app_selected)
-	visibility_changed.connect(toggle_menu)
+	visibility_changed.connect(_on_visibility_changed)
 
 func _on_search_changed(new_text: String) -> void:
 	search_text = new_text.to_lower()
@@ -74,11 +75,14 @@ func _on_search_changed(new_text: String) -> void:
 func _on_search_input(event: InputEvent) -> void:
 	if event is not InputEventKey:
 		return
-	if !event.pressed:
+	match event.keycode:
+		KEY_ESCAPE, KEY_DOWN, KEY_UP, KEY_ENTER:
+			search_line.accept_event()
+	if not event.pressed:
 		return
 	match event.keycode:
 		KEY_ESCAPE:
-			toggle_menu()
+			hide()
 		KEY_DOWN:
 			move_selection(1)
 		KEY_UP:
@@ -94,12 +98,16 @@ func move_selection(dir: int) -> void:
 	var count = app_list.get_item_count()
 	if count == 0:
 		return
-	selected_index = clamp(selected_index + dir, 0, count - 1)
+	selected_index = wrapi(selected_index + dir, 0, count)
 	app_list.select(selected_index)
 	app_list.ensure_current_is_visible()
 
 func launch_selected() -> void:
-	var app:String = app_list.get_item_text(selected_index)
+	var count = app_list.get_item_count()
+	if count == 0:
+		return
+	var index = clampi(selected_index, 0, count - 1)
+	var app: String = app_list.get_item_text(index)
 	if apps.has(app):
 		app_launched.emit(apps[app].Exec)
 		hide()
@@ -107,16 +115,27 @@ func launch_selected() -> void:
 func filter_apps() -> void:
 	app_list.clear()
 	for app: Dictionary in apps.values():
-		if app.values().any(func(val) -> bool: 
+		if app.values().any(func(val) -> bool:
 			return search_text.is_subsequence_of(str(val))
-		): app_list.add_item(app["Name"])
-	selected_index = 0
-
+		):
+			app_list.add_item(app["Name"])
+	if app_list.get_item_count() > 0:
+		selected_index = 0
+		app_list.select(0)
 
 func toggle_menu() -> void:
 	if !visible:
-		return
-	search_line.grab_focus()
+		show()
+	else:
+		hide()
+
+func _on_visibility_changed() -> void:
+	is_open = visible
+	if visible:
+		search_line.text = ""
+		search_text = ""
+		filter_apps()
+		search_line.grab_focus()
 
 func _process(_delta: float) -> void:
 	if is_open and Input.is_action_just_pressed("ui_cancel"):

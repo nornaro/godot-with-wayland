@@ -12,6 +12,7 @@
 #include <godot_cpp/variant/string.hpp>
 
 #include <cstdint>
+#include <string>
 
 namespace godot {
 
@@ -28,6 +29,8 @@ public:
 	String get_socket_name() const;
 	bool is_running() const;
 	Ref<ImageTexture> get_texture() const;
+	String get_clipboard() const;
+	void set_clipboard(const String &text);
 	void set_forward_input(bool enable);
 	bool is_forwarding_input() const;
 	void set_decorations_enabled(bool enable);
@@ -40,9 +43,11 @@ public:
 	void on_frame(const uint8_t *rgba, int width, int height, int stride) override;
 	void on_socket(const char *name) override;
 	void on_log(const char *message) override;
+	std::string get_clipboard_text() override;
+	void on_clipboard_text(const std::string &text) override;
 
 	void _process(double delta) override;
-	void _input(const Ref<InputEvent> &event) override;
+	void _unhandled_input(const Ref<InputEvent> &event) override;
 	void _draw() override;
 
 protected:
@@ -64,8 +69,10 @@ private:
 	unsigned long process_count = 0;
 	int64_t last_frame_time = 0;
 	unsigned long frame_count = 0;
+	std::string host_clipboard_cache;
 
 	Vector2 screen_to_compositor(const Vector2 &screen_pos) const;
+	void poll_host_clipboard();
 	void send_key(const Ref<InputEventKey> &event);
 	void send_mouse_button(const Ref<InputEventMouseButton> &event);
 	void send_mouse_motion(const Ref<InputEventMouseMotion> &event);

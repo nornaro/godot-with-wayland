@@ -4,6 +4,7 @@
 
 #include <cstring>
 
+#include <godot_cpp/classes/display_server.hpp>
 #include <godot_cpp/classes/input_event_key.hpp>
 #include <godot_cpp/classes/input_event_mouse.hpp>
 #include <godot_cpp/classes/input_event_mouse_button.hpp>
@@ -28,6 +29,8 @@ int mouse_button_to_wlr(int godot_button) {
 
 WaylandNode::WaylandNode() {
 	set_process(true);
+	set_process_unhandled_input(true);
+	set_mouse_filter(MOUSE_FILTER_IGNORE);
 }
 
 WaylandNode::~WaylandNode() {
@@ -41,6 +44,8 @@ void WaylandNode::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("get_socket_name"), &WaylandNode::get_socket_name);
 	ClassDB::bind_method(D_METHOD("is_running"), &WaylandNode::is_running);
 	ClassDB::bind_method(D_METHOD("get_texture"), &WaylandNode::get_texture);
+	ClassDB::bind_method(D_METHOD("get_clipboard"), &WaylandNode::get_clipboard);
+	ClassDB::bind_method(D_METHOD("set_clipboard", "text"), &WaylandNode::set_clipboard);
 	ClassDB::bind_method(D_METHOD("set_forward_input", "enable"), &WaylandNode::set_forward_input);
 	ClassDB::bind_method(D_METHOD("is_forwarding_input"), &WaylandNode::is_forwarding_input);
 	ClassDB::bind_method(D_METHOD("set_decorations_enabled", "enable"), &WaylandNode::set_decorations_enabled);
@@ -57,6 +62,7 @@ void WaylandNode::_bind_methods() {
 	ADD_SIGNAL(MethodInfo("frame_ready"));
 	ADD_SIGNAL(MethodInfo("socket_ready", PropertyInfo(Variant::STRING, "socket_name")));
 	ADD_SIGNAL(MethodInfo("log_message", PropertyInfo(Variant::STRING, "message")));
+	ADD_SIGNAL(MethodInfo("selection_changed", PropertyInfo(Variant::STRING, "text")));
 }
 
 void WaylandNode::_notification(int what) {
@@ -73,6 +79,9 @@ void WaylandNode::_process(double delta) {
 			printf("[perf] BIG delta %.1f ms\n", delta * 1000.0);
 		}
 		compositor.pump();
+		if ((process_count % 30) == 0) {
+			poll_host_clipboard();
+		}
 	}
 }
 
@@ -88,7 +97,7 @@ void WaylandNode::_draw() {
 	}
 }
 
-void WaylandNode::_input(const Ref<InputEvent> &event) {
+void WaylandNode::_unhandled_input(const Ref<InputEvent> &event) {
 	if (!running || !forward_input) {
 		return;
 	}
@@ -149,6 +158,40 @@ String WaylandNode::get_socket_name() const {
 
 bool WaylandNode::is_running() const {
 	return running;
+}
+
+String WaylandNode::get_clipboard() const {
+	return DisplayServer::get_singleton()->clipboard_get();
+}
+
+void WaylandNode::set_clipboard(const String &text) {
+	host_clipboard_cache = text.utf8().get_data();
+	DisplayServer::get_singleton()->clipboard_set(text);
+	if (running) {
+		compositor.clipboard_sync();
+	}
+}
+
+std::string WaylandNode::get_clipboard_text() {
+	return host_clipboard_cache;
+}
+
+void WaylandNode::on_clipboard_text(const std::string &text) {
+	host_clipboard_cache = text;
+	String s = String::utf8(text.data(), (int)text.size());
+	DisplayServer::get_singleton()->clipboard_set(s);
+	emit_signal("selection_changed", s);
+}
+
+void WaylandNode::poll_host_clipboard() {
+	String clip = DisplayServer::get_singleton()->clipboard_get();
+	std::string utf8 = clip.utf8().get_data();
+	if (utf8 != host_clipboard_cache) {
+		host_clipboard_cache = utf8;
+		if (running) {
+			compositor.clipboard_sync();
+		}
+	}
 }
 
 Ref<ImageTexture> WaylandNode::get_texture() const {
@@ -226,7 +269,10 @@ void WaylandNode::send_key(const Ref<InputEventKey> &event) {
 	if (event->is_echo()) {
 		return;
 	}
-	uint32_t keycode = event->get_keycode();
+	uint32_t keycode = event->get_physical_keycode();
+	if (keycode == 0) {
+		keycode = event->get_keycode();
+	}
 	if (keycode == 0) {
 		return;
 	}

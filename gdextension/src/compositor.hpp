@@ -9,6 +9,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <ctime>
+#include <string>
 #include <unordered_map>
 #include <vector>
 
@@ -75,8 +76,16 @@ struct CompositorClient {
 	virtual void on_frame(const uint8_t *rgba, int width, int height, int stride) = 0;
 	virtual void on_socket(const char *name) = 0;
 	virtual void on_log(const char *message) = 0;
+	// Clipboard bridge: the compositor asks for the current host text when a
+	// client requests a paste, and hands back text a client copied.
+	virtual std::string get_clipboard_text() { return {}; }
+	virtual void on_clipboard_text(const std::string &text) { (void)text; }
 	virtual ~CompositorClient() = default;
 };
+
+// Defined in compositor.cpp; the compositor only holds pointers to these.
+struct HostClipboardSource;
+struct ClipboardRead;
 
 struct Compositor {
 	enum CursorMode {
@@ -151,6 +160,10 @@ struct Compositor {
 
 	struct wlr_seat *seat = nullptr;
 
+	struct HostClipboardSource *host_clipboard = nullptr;
+	struct wl_listener host_clipboard_destroy;
+	std::vector<ClipboardRead *> active_reads;
+
 	struct wlr_keyboard *keyboard = nullptr;
 	struct wl_listener keyboard_modifiers;
 	struct wl_listener keyboard_key;
@@ -172,6 +185,11 @@ struct Compositor {
 	void pump();
 	void shutdown();
 	bool running() const { return started && display != nullptr; }
+
+	void on_client_selection(struct wlr_data_source *source, uint32_t serial);
+	void clipboard_sync();
+	void pump_clipboard_reads();
+	void cleanup_clipboard();
 
 	void pointer_move_absolute(double x, double y);
 	void pointer_button(uint32_t button, bool pressed);
