@@ -46,10 +46,13 @@ size_flags_vertical = 3
 
 [node name="AppList" type="ItemList" parent="MarginContainer/VBoxContainer/AppListContainer" unique_id=1403477947]
 layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
 allow_reselect = true
+item_count = 1
 fixed_column_width = 260
-icon_mode = 0
 fixed_icon_size = Vector2i(24, 24)
+item_0/text = "test"
 
 [node name="SearchBar" type="HBoxContainer" parent="MarginContainer/VBoxContainer" unique_id=1377240834]
 layout_mode = 2
