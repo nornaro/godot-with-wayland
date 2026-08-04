@@ -1,0 +1,9 @@
+[configuration]
+
+entry_symbol = "godot_drm_library_init"
+compatibility_minimum = "4.7"
+
+[libraries]
+
+linux.debug.x86_64 = "res://addons/godot_backend/bin/libgodot_drm.so"
+linux.release.x86_64 = "res://addons/godot_backend/bin/libgodot_drm.so"

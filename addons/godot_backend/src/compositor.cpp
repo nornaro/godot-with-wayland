@@ -4,8 +4,10 @@
 #include <cstring>
 #include <drm_fourcc.h>
 #include <algorithm>
+#include <execinfo.h>
 #include <fcntl.h>
 #include <poll.h>
+#include <signal.h>
 #include <sys/wait.h>
 #include <unistd.h>
 #include <wayland-server-protocol.h>
@@ -49,6 +51,11 @@ extern "C" {
 #include <wlr/types/wlr_xdg_shell.h>
 #include <wlr/util/log.h>
 
+// wlr/xwayland.h cannot be parsed from C++ (its `struct wlr_xwayland_surface`
+// declares a member literally named `class`). Use a C++-safe copy that renames
+// that one member; layout is identical so ABI with libwlroots-0.19 holds.
+#include "wlr_xwayland_compat.h"
+
 // wlr_scene.h uses the C99 `[static N]` array parameter syntax, which is not
 // valid C++. The header contains no other `static` declarations, so we can
 // safely strip the keyword just while including it.
@@ -64,6 +71,33 @@ extern "C" struct wlr_allocator *wlr_gbm_allocator_create(int drm_fd);
 // ---------------------------------------------------------------------------
 
 static Compositor *g_log_compositor = nullptr;
+
+static void crash_handler(int sig) {
+	const char *msg = "*** native crash (segv/bus/abort) ***\n";
+	ssize_t unused = write(STDERR_FILENO, msg, strlen(msg));
+	(void)unused;
+	int fd = open("/tmp/opencode/crash.log",
+		O_WRONLY | O_CREAT | O_APPEND, 0644);
+	if (fd >= 0) {
+		void *frames[32];
+		int n = backtrace(frames, 32);
+		dprintf(fd, "signal %d (%s)\n", sig, strsignal(sig));
+		backtrace_symbols_fd(frames, n, fd);
+		close(fd);
+	}
+	_exit(128 + sig);
+}
+
+static void install_crash_handler() {
+	struct sigaction sa;
+	memset(&sa, 0, sizeof(sa));
+	sa.sa_handler = crash_handler;
+	sigemptyset(&sa.sa_mask);
+	sa.sa_flags = SA_RESETHAND;
+	sigaction(SIGSEGV, &sa, nullptr);
+	sigaction(SIGABRT, &sa, nullptr);
+	sigaction(SIGBUS, &sa, nullptr);
+}
 
 static void log_callback(enum wlr_log_importance importance, const char *fmt,
 		va_list args) {
@@ -82,84 +116,13 @@ static void log_callback(enum wlr_log_importance importance, const char *fmt,
 // ---------------------------------------------------------------------------
 
 static struct wlr_backend *create_backend(struct wl_display *display) {
-	struct wlr_backend *backend = nullptr;
-
-	const char *wlr_backends = getenv("WLR_BACKENDS");
-	if (wlr_backends != nullptr && strlen(wlr_backends) > 0) {
-		wlr_log(WLR_INFO, "WLR_BACKENDS=%s specified", wlr_backends);
-		wlr_log(WLR_INFO, "Creating backend from WLR_BACKENDS variable");
-		return wlr_backend_autocreate(wl_display_get_event_loop(display), nullptr);
-	}
-
-	// Check for Gamescope (already running)
-	if (getenv("GAMESCOPE_SESSION") || getenv("GAMESCOPE_COMPOSITOR")) {
-		wlr_log(WLR_INFO, "Gamescope detected, creating Wayland backend");
-		backend = wlr_wl_backend_create(wl_display_get_event_loop(display), display);
-		if (backend == nullptr) {
-			wlr_log(WLR_ERROR, "failed to create Gamescope Wayland backend");
-			return nullptr;
-		}
-		return backend;
-	}
-
-	// Check for mwm (previously miwm, minimalist window manager)
-	if (getenv("MWM_RUN") || getenv("MWM_WINDOWID")) {
-		wlr_log(WLR_INFO, "mwm detected, creating Wayland backend");
-		backend = wlr_wl_backend_create(wl_display_get_event_loop(display), display);
-		if (backend == nullptr) {
-			wlr_log(WLR_ERROR, "failed to create mwm Wayland backend");
-			return nullptr;
-		}
-		return backend;
-	}
-
-	// Check for TinyWM
-	if (getenv("TINYWM_SOCKET") || (getenv("XDG_SESSION_TYPE") && strcmp(getenv("XDG_SESSION_TYPE"), "wayland") == 0)) {
-		wlr_log(WLR_INFO, "TinyWM/Wayland session detected, creating Wayland backend");
-		backend = wlr_wl_backend_create(wl_display_get_event_loop(display), display);
-		if (backend == nullptr) {
-			wlr_log(WLR_ERROR, "failed to create TinyWM Wayland backend");
-			return nullptr;
-		}
-		return backend;
-	}
-
-	// Check for weston (another Wayland compositor)
-	if (getenv("WAYLAND_DISPLAY") && strlen(getenv("WAYLAND_DISPLAY")) > 0) {
-		wlr_log(WLR_INFO, "weston/Wayland compositor detected, creating Wayland backend");
-		backend = wlr_wl_backend_create(wl_display_get_event_loop(display), display);
-		if (backend == nullptr) {
-			wlr_log(WLR_ERROR, "failed to create weston Wayland backend");
-			return nullptr;
-		}
-		return backend;
-	}
-
-	// Check for SDL (X11 with Wayland support)
-	if (getenv("DISPLAY") && strlen(getenv("DISPLAY")) > 0) {
-		wlr_log(WLR_INFO, "DISPLAY detected, using X11+libinput backend");
-		// wlr_backend_autocreate will handle X11 when DISPLAY is set
-		return wlr_backend_autocreate(wl_display_get_event_loop(display), nullptr);
-	}
-
-	// Check for KMS/DRM availability (gamescope embedded mode)
-	int drm_fd = -1;
-	for (int i = 128; i < 140 && drm_fd < 0; i++) {
-		char path[64];
-		snprintf(path, sizeof(path), "/dev/dri/renderD%d", i);
-		drm_fd = open(path, O_RDWR | O_CLOEXEC);
-		if (drm_fd >= 0) {
-			wlr_log(WLR_INFO, "DRM device %s available, using DRM backend", path);
-			return wlr_backend_autocreate(wl_display_get_event_loop(display), nullptr);
-		}
-	}
-	if (drm_fd >= 0) {
-		close(drm_fd);
-	}
-
-	// Default to headless for testing and development
-	wlr_log(WLR_INFO, "No supported backend detected, using headless backend");
-	backend = wlr_headless_backend_create(wl_display_get_event_loop(display));
+	// This compositor always renders into a virtual headless output whose
+	// buffer is read back into the Godot texture (see init() where
+	// wlr_headless_add_output is used unconditionally). Real wlroots backends
+	// (X11, KMS/DRM, nested Wayland) create their own outputs of arbitrary
+	// size and would abort inside wlr_headless_add_output(), so headless is
+	// the only supported mode here. X11 apps run inside via rootless XWayland.
+	struct wlr_backend *backend = wlr_headless_backend_create(wl_display_get_event_loop(display));
 	if (backend == nullptr) {
 		wlr_log(WLR_ERROR, "failed to create headless backend");
 		return nullptr;
@@ -421,12 +384,17 @@ static void focus_toplevel(Compositor *c, Toplevel *toplevel) {
 	}
 	struct wlr_seat *seat = c->seat;
 	struct wlr_surface *prev_surface = seat->keyboard_state.focused_surface;
-	struct wlr_surface *surface = toplevel->xdg_toplevel->base->surface;
+	struct wlr_surface *surface = toplevel->is_x11 ?
+		toplevel->xwayland_surface->surface : toplevel->xdg_toplevel->base->surface;
 	{
 		FILE *f = fopen("/tmp/opencode/input.log", "a");
 		if (f) {
 			fprintf(f, "focus -> surface=%p app_id=%s\n", (void *)surface,
-				toplevel->xdg_toplevel->app_id ? toplevel->xdg_toplevel->app_id : "(null)");
+				toplevel->is_x11 ?
+					(toplevel->xwayland_surface->instance ?
+						toplevel->xwayland_surface->instance : "(x11)") :
+					(toplevel->xdg_toplevel->app_id ?
+						toplevel->xdg_toplevel->app_id : "(null)"));
 			fclose(f);
 		}
 	}
@@ -434,17 +402,29 @@ static void focus_toplevel(Compositor *c, Toplevel *toplevel) {
 		return;
 	}
 	if (prev_surface) {
-		struct wlr_xdg_toplevel *prev_toplevel =
-			wlr_xdg_toplevel_try_from_wlr_surface(prev_surface);
-		if (prev_toplevel != nullptr) {
-			wlr_xdg_toplevel_set_activated(prev_toplevel, false);
+		struct wlr_xwayland_surface *prev_xwl =
+			wlr_xwayland_surface_try_from_wlr_surface(prev_surface);
+		if (prev_xwl != nullptr) {
+			wlr_xwayland_surface_activate(prev_xwl, false);
+		} else {
+			struct wlr_xdg_toplevel *prev_toplevel =
+				wlr_xdg_toplevel_try_from_wlr_surface(prev_surface);
+			if (prev_toplevel != nullptr) {
+				wlr_xdg_toplevel_set_activated(prev_toplevel, false);
+			}
 		}
 	}
 	struct wlr_keyboard *keyboard = wlr_seat_get_keyboard(seat);
 	wlr_scene_node_raise_to_top(&toplevel->tree->node);
-	wl_list_remove(&toplevel->link);
+	if (toplevel->link.next != nullptr) {
+		wl_list_remove(&toplevel->link);
+	}
 	wl_list_insert(&c->toplevels, &toplevel->link);
-	wlr_xdg_toplevel_set_activated(toplevel->xdg_toplevel, true);
+	if (toplevel->is_x11) {
+		wlr_xwayland_surface_activate(toplevel->xwayland_surface, true);
+	} else {
+		wlr_xdg_toplevel_set_activated(toplevel->xdg_toplevel, true);
+	}
 	if (keyboard != nullptr) {
 		wlr_seat_keyboard_notify_enter(seat, surface,
 			keyboard->keycodes, keyboard->num_keycodes, &keyboard->modifiers);
@@ -545,7 +525,9 @@ static void xdg_toplevel_destroy(struct wl_listener *listener, void *data) {
 static void decoration_request_mode(struct wl_listener *listener, void *data) {
 	Toplevel *toplevel = wl_container_of(listener, toplevel, decoration_request_mode);
 	wlr_xdg_toplevel_decoration_v1_set_mode(toplevel->decoration,
-		WLR_XDG_TOPLEVEL_DECORATION_V1_MODE_SERVER_SIDE);
+		toplevel->compositor->decorations_enabled
+			? WLR_XDG_TOPLEVEL_DECORATION_V1_MODE_SERVER_SIDE
+			: WLR_XDG_TOPLEVEL_DECORATION_V1_MODE_CLIENT_SIDE);
 }
 
 static void decoration_destroy(struct wl_listener *listener, void *data) {
@@ -681,6 +663,177 @@ static void handle_new_xdg_toplevel(struct wl_listener *listener, void *data) {
 	wl_signal_add(&xdg_toplevel->events.request_fullscreen, &toplevel->request_fullscreen);
 }
 
+// ---------------------------------------------------------------------------
+// XWayland surface handling (X11 apps like tint3 through rootless Xwayland)
+// ---------------------------------------------------------------------------
+
+static void xwayland_surface_commit(struct wl_listener *listener, void *data);
+static void xwayland_surface_map(struct wl_listener *listener, void *data);
+static void xwayland_surface_unmap(struct wl_listener *listener, void *data);
+
+static void xwayland_surface_map(struct wl_listener *listener, void *data) {
+	(void)data;
+	Toplevel *toplevel = wl_container_of(listener, toplevel, map);
+	Compositor *c = toplevel->compositor;
+	struct wlr_xwayland_surface *xwl = toplevel->xwayland_surface;
+	if (toplevel->scene_surface == nullptr) {
+		toplevel->scene_surface =
+			wlr_scene_surface_create(toplevel->tree, xwl->surface);
+		toplevel->scene_surface->buffer->node.data = toplevel;
+		toplevel->commit.notify = xwayland_surface_commit;
+		wl_signal_add(&xwl->surface->events.commit, &toplevel->commit);
+	}
+	if (!xwl->override_redirect) {
+		wl_list_insert(&c->toplevels, &toplevel->link);
+		focus_toplevel(c, toplevel);
+	}
+}
+
+static void xwayland_surface_unmap(struct wl_listener *listener, void *data) {
+	(void)data;
+	Toplevel *toplevel = wl_container_of(listener, toplevel, unmap);
+	Compositor *c = toplevel->compositor;
+	if (toplevel == c->grabbed_toplevel) {
+		c->reset_cursor_mode();
+	}
+	if (toplevel->link.next != nullptr) {
+		wl_list_remove(&toplevel->link);
+	}
+}
+
+static void xwayland_surface_associate(struct wl_listener *listener, void *data) {
+	(void)data;
+	Toplevel *toplevel = wl_container_of(listener, toplevel, associate);
+	struct wlr_xwayland_surface *xwl = toplevel->xwayland_surface;
+	if (xwl->surface == nullptr) {
+		return;
+	}
+	if (toplevel->map.link.next == nullptr) {
+		toplevel->map.notify = xwayland_surface_map;
+		wl_signal_add(&xwl->surface->events.map, &toplevel->map);
+	}
+	if (toplevel->unmap.link.next == nullptr) {
+		toplevel->unmap.notify = xwayland_surface_unmap;
+		wl_signal_add(&xwl->surface->events.unmap, &toplevel->unmap);
+	}
+}
+
+static void xwayland_surface_dissociate(struct wl_listener *listener, void *data) {
+	(void)data;
+	Toplevel *toplevel = wl_container_of(listener, toplevel, dissociate);
+	// The associated wlr_surface is going away: detach every listener we put
+	// on it and drop the scene surface before it turns into a dangling pointer.
+	if (toplevel->map.link.next != nullptr) {
+		wl_list_remove(&toplevel->map.link);
+	}
+	if (toplevel->unmap.link.next != nullptr) {
+		wl_list_remove(&toplevel->unmap.link);
+	}
+	if (toplevel->commit.link.next != nullptr) {
+		wl_list_remove(&toplevel->commit.link);
+	}
+	toplevel->scene_surface = nullptr;
+	toplevel->centered = false;
+	if (toplevel->link.next != nullptr) {
+		wl_list_remove(&toplevel->link);
+	}
+}
+
+static void xwayland_surface_commit(struct wl_listener *listener, void *data) {
+	(void)data;
+	Toplevel *toplevel = wl_container_of(listener, toplevel, commit);
+	Compositor *c = toplevel->compositor;
+	struct wlr_xwayland_surface *xwl = toplevel->xwayland_surface;
+	if (xwl == nullptr || xwl->surface == nullptr) {
+		return;
+	}
+	const int w = xwl->surface->current.width;
+	const int h = xwl->surface->current.height;
+	if (w <= 0 || h <= 0) {
+		return;
+	}
+	if (toplevel->fullscreen) {
+		wlr_scene_node_set_position(&toplevel->tree->node, 0, 0);
+		return;
+	}
+	if (xwl->override_redirect) {
+		// Docks/panels position themselves; honor their requested placement.
+		wlr_scene_node_set_position(&toplevel->tree->node, xwl->x, xwl->y);
+		return;
+	}
+	if (!toplevel->centered) {
+		toplevel->centered = true;
+		const double pos_x = (c->output_width - w) / 2.0;
+		const double pos_y = (c->output_height - h) / 2.0;
+		wlr_scene_node_set_position(&toplevel->tree->node,
+			pos_x > 0.0 ? pos_x : 0.0, pos_y > 0.0 ? pos_y : 0.0);
+		wlr_xwayland_surface_configure(xwl,
+			(int16_t)(pos_x > 0.0 ? pos_x : 0.0),
+			(int16_t)(pos_y > 0.0 ? pos_y : 0.0), (uint16_t)w, (uint16_t)h);
+	}
+}
+
+static void xwayland_surface_request_configure(struct wl_listener *listener, void *data) {
+	Toplevel *toplevel = wl_container_of(listener, toplevel, request_configure);
+	struct wlr_xwayland_surface_configure_event *event =
+		(struct wlr_xwayland_surface_configure_event *)data;
+	wlr_xwayland_surface_configure(toplevel->xwayland_surface,
+		event->x, event->y, event->width, event->height);
+}
+
+static void xwayland_surface_destroy(struct wl_listener *listener, void *data) {
+	(void)data;
+	Toplevel *toplevel = wl_container_of(listener, toplevel, destroy);
+	// dissociate may have detached these already; each remove must be guarded
+	// because wl_list_remove on a previously-removed (NULLed) link is UB.
+	if (toplevel->map.link.next != nullptr) {
+		wl_list_remove(&toplevel->map.link);
+	}
+	if (toplevel->unmap.link.next != nullptr) {
+		wl_list_remove(&toplevel->unmap.link);
+	}
+	if (toplevel->commit.link.next != nullptr) {
+		wl_list_remove(&toplevel->commit.link);
+	}
+	if (toplevel->destroy.link.next != nullptr) {
+		wl_list_remove(&toplevel->destroy.link);
+	}
+	if (toplevel->request_configure.link.next != nullptr) {
+		wl_list_remove(&toplevel->request_configure.link);
+	}
+	if (toplevel->associate.link.next != nullptr) {
+		wl_list_remove(&toplevel->associate.link);
+	}
+	if (toplevel->dissociate.link.next != nullptr) {
+		wl_list_remove(&toplevel->dissociate.link);
+	}
+	free(toplevel);
+}
+
+static void handle_new_xwayland_surface(struct wl_listener *listener, void *data) {
+	Compositor *c = wl_container_of(listener, c, new_xwayland_surface);
+	struct wlr_xwayland_surface *xwl = (struct wlr_xwayland_surface *)data;
+
+	Toplevel *toplevel = (Toplevel *)calloc(1, sizeof(*toplevel));
+	toplevel->compositor = c;
+	toplevel->is_x11 = true;
+	toplevel->xwayland_surface = xwl;
+	if (c->fullscreen_apps) {
+		toplevel->fullscreen = true;
+	}
+	toplevel->tree = wlr_scene_tree_create(&c->scene->tree);
+	toplevel->tree->node.data = toplevel;
+
+	toplevel->destroy.notify = xwayland_surface_destroy;
+	wl_signal_add(&xwl->events.destroy, &toplevel->destroy);
+	toplevel->request_configure.notify = xwayland_surface_request_configure;
+	wl_signal_add(&xwl->events.request_configure, &toplevel->request_configure);
+	toplevel->associate.notify = xwayland_surface_associate;
+	wl_signal_add(&xwl->events.associate, &toplevel->associate);
+	toplevel->dissociate.notify = xwayland_surface_dissociate;
+	wl_signal_add(&xwl->events.dissociate, &toplevel->dissociate);
+}
+
 static void handle_new_xdg_popup(struct wl_listener *listener, void *data) {
 	struct wlr_xdg_popup *xdg_popup = (struct wlr_xdg_popup *)data;
 
@@ -810,6 +963,7 @@ bool Compositor::init(int width, int height) {
 	output_width = width;
 	output_height = height;
 
+	install_crash_handler();
 	g_log_compositor = this;
 	wlr_log_init(WLR_DEBUG, log_callback);
 
@@ -819,8 +973,9 @@ bool Compositor::init(int width, int height) {
 	}
 
 	// Backend selection based on environment variables and system capabilities
-	// This allows integration with Gamescope, mwm, TinyWM, and KMS/DRM
-	backend = create_backend(display);
+	// This allows integration with Gamescope, mwm, TinyWM, and KMS/DRM.
+	// Specialized extensions (e.g. gamescope) can install their own factory.
+	backend = backend_factory != nullptr ? backend_factory(display) : create_backend(display);
 	if (backend == nullptr) {
 		wlr_log(WLR_ERROR, "failed to create wlr_backend");
 		return false;
@@ -865,7 +1020,7 @@ bool Compositor::init(int width, int height) {
 		}
 	}
 
-	wlr_compositor_create(display, 6, renderer);
+	struct wlr_compositor *wlr_compositor_inst = wlr_compositor_create(display, 6, renderer);
 	wlr_subcompositor_create(display);
 	wlr_data_device_manager_create(display);
 	wlr_drm_create(display, renderer);
@@ -1007,6 +1162,17 @@ bool Compositor::init(int width, int height) {
 		return false;
 	}
 
+	// Rootless XWayland so X11 apps (e.g. tint3) run inside the compositor.
+	// Lazy: Xwayland is only spawned when the first X11 client connects.
+	xwayland = wlr_xwayland_create(display, wlr_compositor_inst, true);
+	if (xwayland == nullptr) {
+		wlr_log(WLR_ERROR, "failed to create XWayland server");
+		return false;
+	}
+	wlr_xwayland_set_seat(xwayland, seat);
+	new_xwayland_surface.notify = handle_new_xwayland_surface;
+	wl_signal_add(&xwayland->events.new_surface, &new_xwayland_surface);
+
 	if (client) {
 		client->on_socket(socket_name);
 	}
@@ -1058,6 +1224,11 @@ void Compositor::shutdown() {
 	wl_display_destroy_clients(display);
 	cleanup_clipboard();
 
+	if (xwayland != nullptr) {
+		wl_list_remove(&new_xwayland_surface.link);
+		wlr_xwayland_destroy(xwayland);
+		xwayland = nullptr;
+	}
 	wl_list_remove(&new_xdg_toplevel.link);
 	wl_list_remove(&new_xdg_popup.link);
 	wl_list_remove(&new_output.link);
@@ -1673,6 +1844,11 @@ bool Compositor::launch_process(const char *command) {
 		unsetenv("XAUTHORITY");
 		unsetenv("WAYLAND_DISPLAY");
 		setenv("WAYLAND_DISPLAY", socket_name, 1);
+		if (xwayland != nullptr && xwayland->display_name != nullptr &&
+				xwayland->display_name[0] != '\0') {
+			// Let X11 apps (e.g. tint3) connect through rootless Xwayland.
+			setenv("DISPLAY", xwayland->display_name, 1);
+		}
 		setenv("SDL_VIDEODRIVER", "wayland", 1);
 		setenv("QT_QPA_PLATFORM", "wayland", 1);
 		setenv("GDK_BACKEND", "wayland", 1);

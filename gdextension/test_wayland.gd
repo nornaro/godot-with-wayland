@@ -1,6 +1,8 @@
 extends Control
 
 @onready var wayland: WaylandNode = $Wayland
+@onready var wm: WaylandNode = $WM
+@onready var gamescope: WaylandNode = $Gamescope
 @onready var taskbar: PanelContainer = $Taskbar
 @onready var start_menu: Control = $StartMenu
 
@@ -10,14 +12,8 @@ enum DisplayMode {
 }
 
 @export var display_mode: DisplayMode = DisplayMode.CONTROL_FULLSCREEN
-## Make the app's main window fullscreen.
 @export var fullscreen := false
-## Fill the host window with the compositor output, stretching it when the
-## window is resized. Disable to draw at the native compositor size (centered).
 @export var stretch_to_fit := true
-## Treat clients as apps that handle their own windowing: their surface is
-## mapped edge-to-edge to the whole compositor output instead of a centered
-## window.
 @export var fullscreen_apps := false
 @export var client: String = "mangohud 0ad -windowed"
 
@@ -43,12 +39,17 @@ func _ready() -> void:
 	start_menu.app_launched.connect(_on_app_launched)
 	wayland.start(1280, 720)
 	wayland.launch_client(client)
-
-#func _process(_delta: float) -> void:
-	#_frame += 1
-	#if _frame % 90 == 0:
-		#var img: Image = wayland.get_texture().get_image()
-		#img.save_png("/tmp/opencode/wl_%d_%03d.png" % [_pid, _frame / 90])
+	
+	# Add WM and Gamescope backends for different use cases
+	wm.set_decorations_enabled(true)
+	wm.set_stretch_to_fit(false)
+	wm.set_fullscreen_apps(true)
+	wm.start(1280, 720)
+	
+	gamescope.set_decorations_enabled(false)
+	gamescope.set_stretch_to_fit(true)
+	gamescope.set_fullscreen_apps(true)
+	gamescope.start(1280, 720)
 
 func _on_socket_ready(socket_name: String) -> void:
 	print("WAYLAND SOCKET: ", socket_name)

@@ -1,0 +1,67 @@
+[gd_scene format=3 uid="uid://dyr2448d8t4n1"]
+
+[ext_resource type="Script" uid="uid://c3g58hpc8ojdx" path="res://scripts/main.gd" id="1_6uqi0"]
+[ext_resource type="PackedScene" path="res://ui/taskbar.tscn" id="1_37kl0"]
+[ext_resource type="PackedScene" uid="uid://cljewhw5n3jcf" path="res://ui/startmenu.tscn" id="2_8uh7m"]
+
+[node name="Test" type="Control" unique_id=751861382]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1_6uqi0")
+startup_apps = {
+"GameScope": ["sakura"],
+"WaylandNode": ["sakura"],
+"X11WMNode": ["sakura"]
+}
+
+[node name="GridContainer" type="GridContainer" parent="." unique_id=853736354]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+columns = 2
+
+[node name="WaylandNode" type="WaylandNode" parent="GridContainer" unique_id=1137456688]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+
+[node name="GameScope" type="GameScope" parent="GridContainer" unique_id=1804026671]
+autostart = false
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+
+[node name="X11WMNode" type="X11WMNode" parent="GridContainer" unique_id=1177539055]
+autostart = false
+display_name = ":100"
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+
+[node name="Taskbar" parent="." unique_id=1832833864 instance=ExtResource("1_37kl0")]
+layout_mode = 0
+anchors_preset = 0
+anchor_top = 0.0
+anchor_right = 0.0
+anchor_bottom = 0.0
+offset_top = 0.0
+offset_bottom = 44.0
+grow_horizontal = 1
+grow_vertical = 1
+
+[node name="StartMenu" parent="." unique_id=972741279 instance=ExtResource("2_8uh7m")]
+unique_name_in_owner = true
+layout_mode = 0
+anchors_preset = 0
+anchor_top = 0.0
+anchor_bottom = 0.0
+offset_top = 0.0
+offset_bottom = 435.0
+grow_vertical = 1

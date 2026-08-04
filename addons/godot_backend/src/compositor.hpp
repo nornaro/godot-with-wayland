@@ -39,6 +39,9 @@ struct wlr_seat;
 struct wlr_keyboard;
 struct wlr_pointer;
 struct wlr_surface;
+struct wlr_scene_surface;
+struct wlr_xwayland;
+struct wlr_xwayland_surface;
 struct xkb_keymap;
 
 struct Toplevel {
@@ -48,6 +51,10 @@ struct Toplevel {
 	struct wl_list link;
 	Compositor *compositor;
 	struct wlr_xdg_toplevel *xdg_toplevel;
+	// X11 surface managed through XWayland (is_x11 == true).
+	struct wlr_xwayland_surface *xwayland_surface;
+	struct wlr_scene_surface *scene_surface;
+	bool is_x11;
 	struct wlr_scene_tree *tree;
 	struct wlr_scene_rect *frame;
 	struct wlr_scene_rect *close_btn;
@@ -60,6 +67,9 @@ struct Toplevel {
 	struct wl_listener unmap;
 	struct wl_listener commit;
 	struct wl_listener destroy;
+	struct wl_listener request_configure;
+	struct wl_listener associate;
+	struct wl_listener dissociate;
 	struct wl_listener request_move;
 	struct wl_listener request_resize;
 	struct wl_listener request_maximize;
@@ -130,6 +140,10 @@ struct Compositor {
 	bool started = false;
 
 	struct wl_display *display = nullptr;
+	// Optional backend factory override. When set, init() uses it instead of
+	// the built-in create_backend() environment-based selection. Used by the
+	// godot_gamescope extension to pick a Gamescope-aware backend.
+	struct wlr_backend *(*backend_factory)(struct wl_display *display) = nullptr;
 	struct wlr_backend *backend = nullptr;
 	struct wlr_renderer *renderer = nullptr;
 	struct wlr_allocator *allocator = nullptr;
@@ -154,6 +168,9 @@ struct Compositor {
 	bool decorations_enabled = false;
 	bool fullscreen_apps = false;
 	struct wl_list toplevels;
+
+	struct wlr_xwayland *xwayland = nullptr;
+	struct wl_listener new_xwayland_surface;
 
 	struct wlr_cursor *cursor = nullptr;
 	struct wlr_xcursor_manager *cursor_mgr = nullptr;
