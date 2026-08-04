@@ -114,7 +114,7 @@ void X11WMNode::_unhandled_input(const Ref<InputEvent> &event) {
 		return;
 	}
 	const Ref<InputEventMouse> mouse = event;
-	if (mouse.is_valid() && !get_global_rect().has_point(mouse->get_global_position())) {
+	if (mouse.is_valid() && !get_global_rect().has_point(mouse->get_position())) {
 		return;
 	}
 	const Ref<InputEventMouseButton> mouse_button = event;

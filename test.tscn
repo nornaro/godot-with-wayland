@@ -40,6 +40,7 @@ size_flags_vertical = 3
 
 [node name="X11WMNode" type="X11WMNode" parent="GridContainer" unique_id=1177539055]
 autostart = false
+wm_mode = 2
 display_name = ":100"
 layout_mode = 2
 size_flags_horizontal = 3
